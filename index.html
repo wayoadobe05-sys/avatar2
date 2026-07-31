@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>表情でPNG切替（3種類専用）</title>
+<style>
+  :root { --green: #00b140; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Segoe UI", "Hiragino Sans", "Yu Gothic", sans-serif; background: #1a1a1a; color: #eee; }
+  #layout { display: flex; gap: 20px; align-items: flex-start; padding: 16px; }
+
+  #panel { flex: 0 0 340px; padding: 16px; background: #242424; border-radius: 10px; }
+  #panel h1 { font-size: 16px; margin: 0 0 12px; }
+  .block { margin-bottom: 14px; }
+  .block label { display: block; font-size: 13px; margin-bottom: 4px; color: #cfcfcf; }
+  button { background: #2d7d46; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+  button:disabled { background: #555; cursor: default; }
+  button.help-btn { background: #3a5fa0; }
+  select { width: 100%; padding: 5px; }
+  input[type=range] { width: 100%; }
+  input[type=checkbox] { transform: scale(1.2); margin-right: 6px; }
+  #status { font-size: 13px; color: #9ad; }
+  #current { font-weight: bold; color: #ffd166; font-size: 15px; }
+  .slider-row { display: flex; align-items: center; gap: 8px; }
+  .slider-row input[type=range] { flex: 1; }
+  .slider-row .val { width: 42px; text-align: right; font-size: 12px; color: #ffd166; }
+  table { font-size: 12px; border-collapse: collapse; width: 100%; }
+  td { padding: 3px 6px; border-bottom: 1px solid #333; }
+  td.num { text-align:right; color:#ffd166; width:48px; }
+  .bar { background: #3a3a3a; height: 10px; border-radius: 5px; overflow: hidden; }
+  .bar > div { background: #4caf50; height: 100%; width: 0; transition: width .1s; }
+  .hint { font-size: 11px; color: #888; line-height: 1.6; }
+  code { background:#111; padding:1px 5px; border-radius:4px; }
+  fieldset { border: 1px solid #3a3a3a; border-radius: 8px; margin: 0 0 14px; padding: 10px 12px; }
+  legend { font-size: 12px; color: #9ad; padding: 0 6px; }
+
+  #camWrap { position: relative; width: 100%; border-radius: 6px; overflow: hidden; background:#000; }
+  #cam { display:block; width: 100%; transform: scaleX(-1); }
+  #overlay { position: absolute; inset: 0; width: 100%; height: 100%; transform: scaleX(-1); pointer-events: none; }
+
+  #stage { position: relative; width: 720px; height: 720px; background: var(--green); overflow: hidden; flex: 0 0 auto; }
+  #stage img.face { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity 0.12s ease; pointer-events: none; }
+  #stage img.face.active { opacity: 1; }
+
+  /* ===== ヘルプモーダル ===== */
+  #helpModal { position: fixed; inset: 0; background: rgba(0,0,0,0.78); display: none; align-items: flex-start; justify-content: center; z-index: 1000; overflow-y: auto; padding: 32px 16px; }
+  #helpModal.open { display: flex; }
+  #helpBox { background: #232733; max-width: 940px; width: 100%; border-radius: 12px; padding: 22px 26px; box-shadow: 0 10px 40px rgba(0,0,0,.6); }
+  #helpBox h2 { margin: 0 0 6px; font-size: 20px; }
+  #helpBox .sub { color:#9ad; font-size: 13px; margin-bottom: 16px; }
+  #helpClose { float: right; background:#444; padding:6px 12px; }
+
+  /* ライブ小窓 */
+  #helpLive { display: grid; grid-template-columns: 380px 1fr; gap: 18px; align-items: start; margin-bottom: 18px; }
+  #liveWrap { position: relative; width: 380px; background:#000; border-radius: 8px; overflow: hidden; line-height: 0; }
+  #liveVideo { display:block; width:100%; height:auto; transform: scaleX(-1); }
+  #liveCanvas { position:absolute; inset:0; width:100%; height:100%; transform: scaleX(-1); }
+  #livePanel { font-size: 13px; }
+  #livePanel .liveJudge { font-size: 22px; font-weight: bold; color:#00ff88; margin-bottom: 8px; }
+  #livePanel .liveJudge small { font-size: 12px; color:#9ad; font-weight: normal; display:block; margin-top:2px; }
+  .live-scores { width:100%; }
+  .live-scores td { padding:2px 6px; }
+  .live-note { font-size: 12px; color:#9ad; margin-top:10px; line-height:1.6; }
+  .live-off { color:#ff8a8a; }
+
+  /* 部位の色分け凡例 */
+  .part-legend { display:flex; gap:16px; flex-wrap:wrap; font-size:12px; margin: 4px 0 6px; }
+  .part-legend span { display:inline-flex; align-items:center; gap:6px; color:#d4d8e2; }
+  .swatch { width:14px; height:6px; border-radius:3px; display:inline-block; }
+
+  /* 表情カード */
+  #helpCards { display: grid; grid-template-columns: 1fr; gap: 14px; }
+  .exp-card { display: grid; grid-template-columns: 120px 1fr; gap: 18px; padding: 16px 18px; border: 1px solid #353b4a; border-radius: 12px; align-items: center; background:#1d2130; }
+  .exp-card.match { border-color:#00ff88; box-shadow: 0 0 0 2px #00ff88 inset; }
+  .exp-card .glyph { width: 120px; height: 120px; border-radius: 14px; background:#161a24; display:flex; align-items:center; justify-content:center; }
+  .exp-card .glyph svg { width: 104px; height: 104px; }
+  .exp-card h3 { margin: 0 0 6px; font-size: 18px; }
+  .exp-card h3 .en { color:#7f8aa3; font-weight: normal; font-size: 13px; margin-left: 8px; }
+  .exp-card ul { margin: 8px 0 0; padding-left: 18px; }
+  .exp-card li { font-size: 13.5px; line-height: 1.7; color:#d4d8e2; }
+  .exp-card .basis { color:#ffd166; font-size:13px; }
+  .pp-mouth { color:#ff6b81; font-weight:bold; }
+  .pp-eye   { color:#5ec8ff; font-weight:bold; }
+  .pp-brow  { color:#ffd166; font-weight:bold; }
+</style>
+</head>
+<body>
+
+<div id="layout">
+
+  <div id="panel">
+    <h1>表情でPNG切替アプリ (3種専用)</h1>
+
+    <div class="block">
+      <button id="startBtn">カメラ開始</button>
+      <button id="helpOpen" class="help-btn">❓ 判定のヘルプ</button>
+    </div>
+
+    <div class="block">
+      現在の表情: <span id="current">—</span><br>
+      <span id="status">モデル読込待ち…</span>
+    </div>
+
+    <div class="block">
+      <label>カメラ</label>
+      <select id="camSelect"></select>
+    </div>
+
+    <div class="block">
+      <div id="camWrap">
+        <video id="cam" autoplay muted playsinline></video>
+        <canvas id="overlay"></canvas>
+      </div>
+    </div>
+
+    <fieldset>
+      <legend>判定根拠の表示</legend>
+      <div class="block"><label><input type="checkbox" id="showBox" checked>顔の枠を表示</label></div>
+      <div class="block"><label><input type="checkbox" id="showLandmarks" checked>ランドマーク（目・口など）を表示</label></div>
+      <div class="block"><label><input type="checkbox" id="showLabel" checked>判定ラベル・スコアを表示</label></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>表情のしきい値</legend>
+      <div class="block">
+        <label>笑い（happy）</label>
+        <div class="slider-row">
+          <input id="laughLine" type="range" min="0.05" max="1" step="0.02" value="0.50">
+          <span class="val" id="laughLineVal">0.50</span>
+        </div>
+      </div>
+      <div class="block">
+        <label>驚き（surprise）</label>
+        <div class="slider-row">
+          <input id="thSurprise" type="range" min="0.05" max="1" step="0.05" value="0.4">
+          <span class="val" id="thSurpriseVal">0.40</span>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>切替の安定度</legend>
+      <div class="block">
+        <label>顔検出の感度（低いほど検出しやすい）</label>
+        <div class="slider-row">
+          <input id="detRange" type="range" min="0.05" max="0.6" step="0.05" value="0.2">
+          <span class="val" id="detVal">0.20</span>
+        </div>
+      </div>
+      <div class="block">
+        <label>切替の鈍感さ（保持フレーム）</label>
+        <div class="slider-row">
+          <input id="holdRange" type="range" min="1" max="20" value="3">
+          <span class="val" id="holdVal">3</span>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>リアルタイムのスコア</legend>
+      <table id="scores">
+        <tr><td>neutral</td><td><div class="bar"><div></div></div></td><td class="num" data-k="neutral">0</td></tr>
+        <tr><td>happy</td><td><div class="bar"><div></div></div></td><td class="num" data-k="happy">0</td></tr>
+        <tr><td>surprised</td><td><div class="bar"><div></div></div></td><td class="num" data-k="surprised">0</td></tr>
+      </table>
+    </fieldset>
+
+    <p class="hint">
+      ■ PNG：<code>images/</code> に <code>normal.png / laugh.png / surprise.png</code><br>
+      ■ 映像上の <b>緑枠＝検出した顔</b>、<b>点＝表情の根拠にしている部分</b>。<br>
+      ■ OBS：右の緑エリア（#stage）だけ取り込み、クロマキーで <code>#00b140</code> を抜く。
+    </p>
+  </div>
+
+  <div id="stage">
+    <img class="face" data-key="normal"   src="images/normal.png"   alt="普通">
+    <img class="face" data-key="laugh"    src="images/laugh.png"    alt="笑い">
+    <img class="face" data-key="surprise" src="images/surprise.png" alt="驚き">
+  </div>
+
+</div>
+
+<!-- ===== ヘルプモーダル ===== -->
+<div id="helpModal">
+  <div id="helpBox">
+    <button id="helpClose">閉じる ✕</button>
+    <h2>表情の判定根拠ヘルプ (3種版)</h2>
+    <div class="sub">下のライブ小窓で、あなたの顔の <b class="pp-mouth">口</b>・<b class="pp-eye">目</b>・<b class="pp-brow">眉</b> がどう動くと、どの表情に判定されるかをリアルタイムで確認できます。</div>
+
+    <!-- ライブ小窓 -->
+    <div id="helpLive">
+      <div id="liveWrap">
+        <video id="liveVideo" autoplay muted playsinline></video>
+        <canvas id="liveCanvas"></canvas>
+      </div>
+      <div id="livePanel">
+        <div class="liveJudge" id="liveJudge">—<small id="liveJudgeSub"></small></div>
+        <div class="part-legend">
+          <span><span class="swatch" style="background:#ff6b81"></span>口（mouth）</span>
+          <span><span class="swatch" style="background:#5ec8ff"></span>目（eyes）</span>
+          <span><span class="swatch" style="background:#ffd166"></span>眉（brows）</span>
+        </div>
+        <table class="live-scores" id="liveScores">
+          <tr><td>happy</td><td><div class="bar"><div></div></div></td><td class="num" data-k="happy">0</td></tr>
+          <tr><td>surprised</td><td><div class="bar"><div></div></div></td><td class="num" data-k="surprised">0</td></tr>
+          <tr><td>neutral</td><td><div class="bar"><div></div></div></td><td class="num" data-k="neutral">0</td></tr>
+        </table>
+        <div class="live-note" id="liveNote">「カメラ開始」を押すとライブ表示されます。</div>
+      </div>
+    </div>
+
+    <div id="helpCards"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api/dist/face-api.js"></script>
+<script>
+const MODEL_URL = "https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model/";
+
+// 部位の色
+const COLORS = { mouth:"#ff6b81", eye:"#5ec8ff", brow:"#ffd166", box:"#00ff88" };
+
+const video    = document.getElementById("cam");
+const overlay  = document.getElementById("overlay");
+const octx     = overlay.getContext("2d");
+const startBtn = document.getElementById("startBtn");
+const statusEl = document.getElementById("status");
+const currentEl= document.getElementById("current");
+const camSelect= document.getElementById("camSelect");
+const faces    = [...document.querySelectorAll(".face")];
+
+const showBox       = document.getElementById("showBox");
+const showLandmarks = document.getElementById("showLandmarks");
+const showLabel     = document.getElementById("showLabel");
+
+const barEls = {}, numEls = {};
+document.querySelectorAll("#scores tr").forEach(tr=>{
+  const k = tr.querySelector(".num").dataset.k;
+  barEls[k] = tr.querySelector(".bar>div");
+  numEls[k] = tr.querySelector(".num");
+});
+
+// ライブ小窓
+const liveVideo  = document.getElementById("liveVideo");
+const liveCanvas = document.getElementById("liveCanvas");
+const lctx       = liveCanvas.getContext("2d");
+const liveJudge  = document.getElementById("liveJudge");
+const liveJudgeSub = document.getElementById("liveJudgeSub");
+const liveNote   = document.getElementById("liveNote");
+const liveBar = {}, liveNum = {};
+document.querySelectorAll("#liveScores tr").forEach(tr=>{
+  const k = tr.querySelector(".num").dataset.k;
+  liveBar[k] = tr.querySelector(".bar>div");
+  liveNum[k] = tr.querySelector(".num");
+});
+
+const LABEL_JA = { normal:"普通", laugh:"笑い", surprise:"驚き" };
+
+let detScore = 0.2, holdFrames = 3;
+let laughLine = 0.50;
+const TH = { surprise:0.4 };
+
+let running = false, stream = null;
+let candidate = "normal", candidateCount = 0, shown = "normal";
+
+function bindSlider(id, valId, set, digits){
+  const r = document.getElementById(id);
+  if (!r) return;
+  const v = document.getElementById(valId);
+  const fmt = x => digits ? (+x).toFixed(digits) : x;
+  v.textContent = fmt(r.value);
+  r.oninput = e => { set(+e.target.value); v.textContent = fmt(e.target.value); if (helpModal.classList.contains("open")) renderHelp(); };
+}
+bindSlider("laughLine","laughLineVal", x => laughLine = x, 2);
+bindSlider("thSurprise","thSurpriseVal",x => TH.surprise = x, 2);
+bindSlider("detRange","detVal", x => { detScore = x; rebuildDetector(); }, 2);
+bindSlider("holdRange","holdVal", x => holdFrames = x, 0);
+
+function setFace(key){
+  if (key === shown) return;
+  shown = key;
+  faces.forEach(img => img.classList.toggle("active", img.dataset.key === key));
+  currentEl.textContent = LABEL_JA[key] || key;
+}
+
+function pickExpression(exp){
+  const happy = exp.happy || 0;
+  const surprised = (exp.surprised || 0) + (exp.fearful || 0) * 0.5;
+
+  if (happy >= laughLine) return "laugh";
+  if (surprised >= TH.surprise) return "surprise";
+
+  return "normal";
+}
+
+function expVals(exp){
+  return {
+    neutral: exp.neutral || 0,
+    happy: exp.happy || 0,
+    surprised: (exp.surprised || 0) + (exp.fearful || 0)*0.5
+  };
+}
+
+function updateBars(exp){
+  const vals = expVals(exp);
+  for (const k in vals){
+    if (barEls[k]){ barEls[k].style.width = (vals[k]*100)+"%"; numEls[k].textContent = vals[k].toFixed(2); }
+  }
+}
+
+// 部位ごとに色分けして描画（メイン映像／ライブ小窓 共通）
+function drawParts(ctx, det, judged, happy, opts){
+  const box = det.detection.box;
+  const lm = det.landmarks;
+
+  if (opts.box){
+    ctx.strokeStyle = COLORS.box;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(box.x, box.y, box.width, box.height);
+  }
+
+  if (opts.parts && lm){
+    const strokePoly = (pts, color, close) => {
+      ctx.strokeStyle = color; ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      pts.forEach((p,i)=> i===0 ? ctx.moveTo(p.x,p.y) : ctx.lineTo(p.x,p.y));
+      if (close) ctx.closePath();
+      ctx.stroke();
+    };
+    const dots = (pts, color) => {
+      ctx.fillStyle = color;
+      pts.forEach(p=>{ ctx.beginPath(); ctx.arc(p.x,p.y,2.2,0,Math.PI*2); ctx.fill(); });
+    };
+    // 眉（黄）
+    dots(lm.getLeftEyeBrow(), COLORS.brow);
+    dots(lm.getRightEyeBrow(), COLORS.brow);
+    strokePoly(lm.getLeftEyeBrow(), COLORS.brow, false);
+    strokePoly(lm.getRightEyeBrow(), COLORS.brow, false);
+    // 目（水色）
+    strokePoly(lm.getLeftEye(), COLORS.eye, true);
+    strokePoly(lm.getRightEye(), COLORS.eye, true);
+    dots(lm.getLeftEye(), COLORS.eye);
+    dots(lm.getRightEye(), COLORS.eye);
+    // 口（赤）
+    strokePoly(lm.getMouth(), COLORS.mouth, true);
+    dots(lm.getMouth(), COLORS.mouth);
+  }
+
+  if (opts.label){
+    const text = `${LABEL_JA[judged]||judged}  (happy ${happy.toFixed(2)})`;
+    ctx.save();
+    ctx.translate(ctx.canvas.width, 0);
+    ctx.scale(-1, 1);
+    const tx = ctx.canvas.width - (box.x + box.width);
+    const ty = box.y;
+    ctx.font = "bold 18px sans-serif";
+    const w = ctx.measureText(text).width + 12;
+    ctx.fillStyle = "rgba(0,0,0,0.6)";
+    ctx.fillRect(tx, ty - 26, w, 24);
+    ctx.fillStyle = COLORS.box;
+    ctx.fillText(text, tx + 6, ty - 8);
+    ctx.restore();
+  }
+}
+
+function drawOverlay(det, judged, happy){
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  if (!det) return;
+  drawParts(octx, det, judged, happy, {
+    box: showBox.checked, parts: showLandmarks.checked, label: showLabel.checked
+  });
+}
+
+function drawLive(det, judged, exp){
+  lctx.clearRect(0,0,liveCanvas.width, liveCanvas.height);
+  if (!det) return;
+  drawParts(lctx, det, judged, exp.happy, { box:true, parts:true, label:true });
+}
+
+let detectOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: detScore });
+function rebuildDetector(){
+  detectOptions = new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: detScore });
+}
+
+function syncOverlaySize(){
+  overlay.width  = video.videoWidth  || overlay.clientWidth;
+  overlay.height = video.videoHeight || overlay.clientHeight;
+}
+function syncLiveSize(){
+  liveCanvas.width  = video.videoWidth  || 320;
+  liveCanvas.height = video.videoHeight || 240;
+}
+
+function updateLivePanel(det, exp){
+  if (!helpModal.classList.contains("open")) return;
+  if (!det || !exp){
+    liveJudge.textContent = "—";
+    liveJudgeSub.textContent = "";
+    liveNote.innerHTML = running
+      ? '<span class="live-off">顔が検出できていません。明るい場所で正面を向いてください。</span>'
+      : '「カメラ開始」を押すとライブ表示されます。';
+    return;
+  }
+  const judged = pickExpression(exp);
+  liveJudge.textContent = LABEL_JA[judged] || judged;
+  liveJudgeSub.textContent = `→ ${judged}.png`;
+  const vals = expVals(exp);
+  for (const k in vals){
+    if (liveBar[k]){ liveBar[k].style.width = (vals[k]*100)+"%"; liveNum[k].textContent = vals[k].toFixed(2); }
+  }
+  liveNote.innerHTML = '緑枠＝顔／<b class="pp-mouth">赤＝口</b>・<b class="pp-eye">水色＝目</b>・<b class="pp-brow">黄＝眉</b>。動かすとスコアと判定が変わります。';
+  highlightCard(judged);
+}
+
+let helpCardEls = {};
+function highlightCard(judged){
+  for (const k in helpCardEls){
+    helpCardEls[k].classList.toggle("match", k === judged);
+  }
+}
+
+async function loop(){
+  if (!running) return;
+  const result = await faceapi
+    .detectSingleFace(video, detectOptions)
+    .withFaceLandmarks()
+    .withFaceExpressions();
+
+  if (result && result.expressions){
+    const exp = result.expressions;
+    updateBars(exp);
+    const next = pickExpression(exp);
+    if (next === candidate){ candidateCount++; }
+    else { candidate = next; candidateCount = 1; }
+    if (candidateCount >= holdFrames) setFace(candidate);
+    drawOverlay(result, candidate, exp.happy);
+    drawLive(result, candidate, exp);
+    updateLivePanel(result, exp);
+  } else {
+    octx.clearRect(0, 0, overlay.width, overlay.height);
+    lctx.clearRect(0,0,liveCanvas.width, liveCanvas.height);
+    updateLivePanel(null, null);
+  }
+  requestAnimationFrame(loop);
+}
+
+async function listCameras(){
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const cams = devices.filter(d => d.kind === "videoinput");
+  camSelect.innerHTML = "";
+  cams.forEach((c,i)=>{
+    const o = document.createElement("option");
+    o.value = c.deviceId;
+    o.textContent = c.label || ("カメラ "+(i+1));
+    camSelect.appendChild(o);
+  });
+}
+
+async function startCamera(){
+  if (stream) stream.getTracks().forEach(t=>t.stop());
+  const deviceId = camSelect.value;
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: deviceId ? { deviceId: { exact: deviceId } } : true, audio: false
+  });
+  video.srcObject = stream;
+  liveVideo.srcObject = stream;
+  await video.play();
+  await liveVideo.play().catch(()=>{});
+  syncOverlaySize();
+  syncLiveSize();
+  await listCameras();
+}
+
+camSelect.onchange = () => { if (running) startCamera(); };
+video.addEventListener("loadedmetadata", ()=>{ syncOverlaySize(); syncLiveSize(); });
+
+startBtn.onclick = async () => {
+  startBtn.disabled = true;
+  try {
+    statusEl.textContent = "モデル読込中…";
+    await faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL);
+    await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+    await faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL);
+    statusEl.textContent = "カメラ起動中…";
+    await startCamera();
+    running = true;
+    statusEl.textContent = "稼働中";
+    setFace("normal");
+    loop();
+  } catch (e){
+    statusEl.textContent = "エラー: " + e.message;
+    startBtn.disabled = false;
+  }
+};
+
+navigator.mediaDevices?.enumerateDevices().then(()=>listCameras()).catch(()=>{});
+
+/* ===== ヘルプ：3表情の判定根拠 ===== */
+const helpModal = document.getElementById("helpModal");
+const helpCards = document.getElementById("helpCards");
+const helpOpen  = document.getElementById("helpOpen");
+const helpClose = document.getElementById("helpClose");
+
+function faceGlyph(kind){
+  const C = COLORS;
+  const eyeOpen  = `<circle cx="17" cy="20" r="2.6" fill="${C.eye}"/><circle cx="31" cy="20" r="2.6" fill="${C.eye}"/>`;
+  const eyeWide  = `<circle cx="17" cy="20" r="3.6" fill="${C.eye}"/><circle cx="31" cy="20" r="3.6" fill="${C.eye}"/>`;
+  const eyeArc   = `<path d="M14 21 Q17 18 20 21" stroke="${C.eye}" stroke-width="2" fill="none"/><path d="M28 21 Q31 18 34 21" stroke="${C.eye}" stroke-width="2" fill="none"/>`;
+  const browN    = `<path d="M13 14 H21" stroke="${C.brow}" stroke-width="2"/><path d="M27 14 H35" stroke="${C.brow}" stroke-width="2"/>`;
+  const browUp   = `<path d="M13 12 H21" stroke="${C.brow}" stroke-width="2"/><path d="M27 12 H35" stroke="${C.brow}" stroke-width="2"/>`;
+
+  let eyes = eyeOpen, brow = browN, mouth = "";
+  switch(kind){
+    case "normal":   mouth = `<path d="M17 32 H31" stroke="${C.mouth}" stroke-width="2.5" fill="none"/>`; break;
+    case "laugh":    eyes = eyeArc; mouth = `<path d="M15 29 Q24 41 33 29 Z" fill="${C.mouth}"/>`; break;
+    case "surprise": eyes = eyeWide; brow = browUp; mouth = `<ellipse cx="24" cy="33" rx="4" ry="6" fill="${C.mouth}"/>`; break;
+  }
+  return `<svg viewBox="0 0 48 48">${brow}${eyes}${mouth}</svg>`;
+}
+
+function P(part, text){
+  const cls = part==="mouth" ? "pp-mouth" : part==="eye" ? "pp-eye" : "pp-brow";
+  return `<span class="${cls}">${text}</span>`;
+}
+
+function helpData(){
+  return [
+    {
+      key:"normal", ja:"普通", en:"neutral",
+      basis:"どの表情のしきい値にも届かないときの初期状態。",
+      points:[
+        `${P("mouth","口")}：横一文字で水平。口角の上下がほぼゼロ。`,
+        `${P("eye","目")}・${P("brow","眉")}：自然な開きで水平。`,
+        "happy・surprise がいずれもしきい値未満。"
+      ]
+    },
+    {
+      key:"laugh", ja:"笑い", en:"happy",
+      basis:`happy が <b>${laughLine.toFixed(2)} 以上</b>。`,
+      points:[
+        `${P("mouth","口")}：大きく開き、口角が上がる。`,
+        `${P("eye","目")}：軽く細まりアーチ状に。`
+      ]
+    },
+    {
+      key:"surprise", ja:"驚き", en:"surprised",
+      basis:`(surprised + fearful×0.5) が <b>${TH.surprise.toFixed(2)} 以上</b>。`,
+      points:[
+        `${P("eye","目")}：大きく見開く。`,
+        `${P("brow","眉")}：上に持ち上がる。`,
+        `${P("mouth","口")}：縦に開く。`
+      ]
+    }
+  ];
+}
+
+function renderHelp(){
+  const data = helpData();
+  helpCards.innerHTML = data.map(d => `
+    <div class="exp-card" data-card="${d.key}">
+      <div class="glyph">${faceGlyph(d.key)}</div>
+      <div>
+        <h3>${d.ja}<span class="en">${d.en} → ${d.key}.png</span></h3>
+        <div class="basis">判定条件：${d.basis}</div>
+        <ul>${d.points.map(p=>`<li>${p}</li>`).join("")}</ul>
+      </div>
+    </div>
+  `).join("");
+  helpCardEls = {};
+  helpCards.querySelectorAll(".exp-card").forEach(el=>{
+    helpCardEls[el.dataset.card] = el;
+  });
+}
+
+helpOpen.onclick  = () => {
+  renderHelp();
+  helpModal.classList.add("open");
+  syncLiveSize();
+  if (!running){
+    liveNote.innerHTML = '左の「カメラ開始」を押すと、ここに <b class="pp-mouth">口</b>・<b class="pp-eye">目</b>・<b class="pp-brow">眉</b> 付きのライブ映像が出ます。';
+  }
+};
+helpClose.onclick = () => helpModal.classList.remove("open");
+helpModal.addEventListener("click", e => { if (e.target === helpModal) helpModal.classList.remove("open"); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") helpModal.classList.remove("open"); });
+</script>
+</body>
+</html>
